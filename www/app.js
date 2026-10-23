@@ -1,0 +1,93 @@
+const NAME="Shobana J",EMAIL="shobanaj.bitsathy.ac.in",HASH="ffcc7abb1a089b901e0e6da6a2ad07ec45717762ed8bb53040331edb911d043f";
+// Demo login only. Real login uses Firebase Authentication (see backend/README).
+// Edit block and room names to match your college.
+const B={
+IB:{n:"IB Block",x:20,y:20,w:130,h:90,r:["IB 101","IB 102","IB 103","IB 201","IB 202","IB 203"]},
+AS:{n:"AS Block",x:170,y:20,w:130,h:90,r:["AS 101","AS 102","AS 103","AS 201","AS 202","AS 203"]},
+ME:{n:"Mechanical Block",x:20,y:130,w:130,h:70,r:["ME 101","ME 102","ME 103","ME 201","ME 202"]},
+SF:{n:"SF Block",x:170,y:130,w:130,h:70,r:["SF 101","SF 102","SF 103","SF 201","SF 202"]},
+SH:{n:"Seminar Halls",x:20,y:220,w:90,h:55,r:["Seminar Hall 1","Seminar Hall 2","Mini Seminar Hall"]},
+LB:{n:"Laboratories",x:115,y:220,w:90,h:55,r:["Computer Lab","Physics Lab","Chemistry Lab","Mechanical Workshop","Electronics Lab"]},
+SP:{n:"Sports Areas",x:210,y:220,w:90,h:55,r:["Ground","Basketball Court","Indoor Games Room"]}};
+// Class periods only. Breaks: 10:25-10:40, lunch 12:10-1:40, 3:10-3:25.
+const P=[["8:45 AM","9:35 AM"],["9:35 AM","10:25 AM"],["10:40 AM","11:30 AM"],["11:30 AM","12:10 PM"],["1:40 PM","2:25 PM"],["2:25 PM","3:10 PM"],["3:25 PM","4:20 PM"]];
+const D=[50,50,50,40,45,45,55];
+// Real map positions. Add a block key (IB, AS, ME, SF, SH, LB, SP) with [lat,lng] to switch on its Get directions button.
+const LOC={};
+const PIN={n:"Pinned place",lat:11.500317,lng:77.275166};
+const dir=(la,ln)=>"https://www.google.com/maps/dir/?api=1&destination="+la+","+ln+"&travelmode=walking";
+const see=(la,ln)=>"https://www.google.com/maps/search/?api=1&query="+la+","+ln;
+const $=s=>document.querySelector(s);
+const ld=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v==null?d:v}catch(e){return d}};
+const sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const addD=n=>{const d=new Date();d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)};
+const today=()=>addD(0);
+const lbl=p=>"Period "+(p+1)+", "+P[p][0]+" to "+P[p][1];
+async function sha(s){const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}
+let user=ld("sc_u",null),tab="home",sel=null,chat=[],lf=ld("sc_l",[]),nt=ld("sc_n",[]),wt=ld("sc_w",[]),slotQ={d:today(),a:"IB",r:"IB 101"};
+let bk=ld("sc_b",null);
+if(!bk){bk=[{id:"SCS1",r:"IB 101",d:today(),p:0,who:"Arun K"},{id:"SCS2",r:"IB 101",d:today(),p:2,who:"Meena R"},{id:"SCS3",r:"Computer Lab",d:today(),p:1,who:"Karthik S"},{id:"SCS4",r:"Seminar Hall 1",d:addD(1),p:4,who:"Divya P"}];sv("sc_b",bk)}
+const find=(r,d,p)=>bk.find(b=>b.r==r&&b.d==d&&b.p==p);
+const mine=()=>bk.filter(b=>b.who==NAME&&b.d>=today()).sort((a,b)=>(a.d+a.p)>(b.d+b.p)?1:-1);
+function flash(m){const f=$("#fl");f.textContent=m;f.style.display="block";clearTimeout(flash.t);flash.t=setTimeout(()=>f.style.display="none",3500)}
+function note(m){nt.unshift({m,t:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})});sv("sc_n",nt);flash(m);try{if(window.Notification&&Notification.permission=="granted")new Notification("smartcampus",{body:m})}catch(e){}}
+const opts=(a,x)=>Object.entries(B).map(([k,b])=>`<option value="${k}"${k==a?" selected":""}>${b.n}</option>`).join("")+(x||"");
+const bkCard=b=>`<div class="card"><div class="row"><span><b>${esc(b.r)}</b><br><span class="s">${b.d}<br>${lbl(b.p)}<br>Code ${b.id}</span></span><span class="f0"><button class="g" data-a="qr" data-v="${b.id}">QR</button> <button class="g" data-a="cancel" data-v="${b.id}">Cancel</button></span></div><div id="qr${b.id}" style="text-align:center"></div></div>`;
+const KB=[
+[/qr|verify|pass/,"After booking, tap QR on your booking. Staff can check it under Verify a booking."],
+[/double|conflict|already|taken/,"Each room has one booking per period, so double booking is blocked. If a slot is taken, tap Notify me."],
+[/notif|alert|available|cancel/,"You get an alert when a booking is confirmed or cancelled, and when a slot you are watching becomes free. Tap the bell to read them."],
+[/time|period|slot|hour|timing|break|lunch/,"Class periods: 8:45-9:35, 9:35-10:25, 10:40-11:30, 11:30-12:10, 1:40-2:25, 2:25-3:10, 3:25-4:20. Breaks and lunch can’t be booked."],
+[/lab/,"Laboratories: "+B.LB.r.join(", ")+"."],
+[/book|reserve|room|hall|seminar/,"Open Book a space, pick the date, block and room, then tap Book on a free period. Seminar halls: "+B.SH.r.join(", ")+"."],
+[/lost|found|laptop|missing|wallet|id card/,"Open Lost & Found, choose Lost or Found, fill the form and tap Publish report."],
+[/sport|ground|court|game/,"Sports areas: "+B.SP.r.join(", ")+"."],
+[/\bib\b/,"IB Block rooms: "+B.IB.r.join(", ")+"."],
+[/\bas\b/,"AS Block rooms: "+B.AS.r.join(", ")+"."],
+[/mech/,"Mechanical Block rooms: "+B.ME.r.join(", ")+"."],
+[/\bsf\b/,"SF Block rooms: "+B.SF.r.join(", ")+"."],
+[/block|map|where|building/,"Open Facilities and tap a block on the campus map to see its rooms."]];
+const TABS=[["home","Home"],["fac","Facilities"],["bk","Bookings"],["lf","Lost & Found"],["ai","Nexus"]];
+const V={
+login:()=>`<h1>Welcome back</h1><p class="s">Sign in with your college email.</p><div class="card"><label>Email</label><input id="em" type="email" autocomplete="username"><label>Password</label><input id="pw" type="password" autocomplete="current-password"><div class="err" id="le"></div><button class="btn" data-a="login">Sign in</button></div>`,
+home:()=>`<p class="s">${new Date().toLocaleDateString("en-US",{weekday:"long"})}, your campus overview</p><h1>Good to see you, ${NAME}</h1><p class="s">Here’s what’s happening around campus today.</p>
+<button class="btn" data-a="go" data-v="bk">+ Book a space</button>
+<div class="hero"><h1>Make room for great things.</h1><p>Find the right space for your next big idea.</p><button class="btn w" data-a="go" data-v="fac">Explore facilities</button></div>
+<h2>Quick access</h2><p class="s">Your most-used campus services</p>
+<div class="grid">${[["fac","Find a facility","Discover campus spaces"],["bk","My bookings","Manage reservations"],["fac","Campus map","Find your destination"],["lf","Lost & Found","Help items find owners"]].map(q=>`<button class="card q" data-a="go" data-v="${q[0]}"><b>${q[1]}</b><small>${q[2]}</small></button>`).join("")}</div>
+<h2>Upcoming bookings</h2>${mine().length?mine().slice(0,3).map(bkCard).join(""):'<p class="s">No bookings yet. Tap Book a space.</p>'}<button class="g" style="margin-top:18px" data-a="out">Sign out</button>`,
+fac:()=>`<h1>Facilities</h1><p class="s">Tap a block on the campus map to see its rooms. The layout is a sketch and can be fixed later.</p><svg viewBox="0 0 320 290">${Object.entries(B).map(([k,b])=>`<rect class="blk${sel==k?" sel":""}" data-a="blk" data-v="${k}" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="10"/><text class="t" x="${b.x+b.w/2}" y="${b.y+b.h/2+4}">${b.n.replace(" Block","")}</text>`).join("")}</svg><div class="card"><b>${PIN.n}</b><br><span class="s">${PIN.lat}, ${PIN.lng}</span><div class="row"><a class="btn" href="${dir(PIN.lat,PIN.lng)}" target="_blank" rel="noopener">Get directions</a><a class="g" href="${see(PIN.lat,PIN.lng)}" target="_blank" rel="noopener">View on map</a></div></div>${sel?`<h2>${B[sel].n}</h2>${LOC[sel]?`<a class="btn" href="${dir(LOC[sel][0],LOC[sel][1])}" target="_blank" rel="noopener">Get directions</a>`:""}`+B[sel].r.map(r=>`<div class="card row"><span>${r}</span><span class="f0"><button class="g" data-a="book" data-v="${sel}|${r}">Book</button></span></div>`).join(""):""}`,
+bk:()=>{const{d,a,r}=slotQ;return `<h1>Book a space</h1><p class="s">Slots follow class timings. One booking per room and period.</p><div class="card"><label>Date</label><input type="date" id="bd" min="${today()}" value="${d}"><label>Block</label><select id="bb">${opts(a)}</select><label>Room</label><select id="br">${B[a].r.map(x=>`<option${x==r?" selected":""}>${x}</option>`).join("")}</select></div>`+P.map((s,p)=>{const x=find(r,d,p),me=x&&x.who==NAME,w=wt.includes(r+"|"+d+"|"+p);return `<div class="card row"><span><b>Period ${p+1}</b><br><span class="s">${s[0]} to ${s[1]} · ${D[p]} min${x&&!me?"<br>Booked by "+esc(x.who):""}</span></span><span class="f0">${!x?`<button class="g on" data-a="take" data-v="${p}">Book</button>`:me?`<button class="g" data-a="cancel" data-v="${x.id}">Cancel</button>`:`<button class="g" data-a="watch" data-v="${p}">${w?"Watching":"Notify me"}</button><br><button class="g sm" data-a="ocancel" data-v="${x.id}">Demo: they cancel</button>`}</span></div>`}).join("")+`<h2>My bookings</h2>${mine().length?mine().map(bkCard).join(""):'<p class="s">No bookings yet.</p>'}<h2>Verify a booking</h2><p class="s">For staff. Paste the text from a booking pass.</p><input id="vc" placeholder="SCABC123|IB 101|2026-10-22|Period 1, 8:45 AM to 9:35 AM"><button class="btn" data-a="verify">Check booking</button><div class="card" id="vo" style="display:none"></div>`},
+nt:()=>`<h1>Notifications</h1><p class="s">Booking updates and slot alerts.</p>${nt.length?nt.map(n=>`<div class="card"><b>${esc(n.m)}</b><br><span class="s">${n.t}</span></div>`).join("")+'<button class="g" data-a="clr">Clear all</button>':'<p class="s">Nothing yet.</p>'}`,
+lf:()=>`<p class="s">Community care</p><h1>Lost something?</h1><p class="s">Small acts help belongings find their way home.</p><div class="card"><h2 style="margin-top:0">Post a report</h2><label>Report type</label><select id="lt"><option>Lost</option><option>Found</option></select><label>Item name</label><input id="li" placeholder="e.g. Blue water bottle"><label>Description</label><textarea id="ld" rows="3" placeholder="Colour, brand or identifying details"></textarea><label>Where was it lost/found?</label><select id="lb">${opts("")}<option value="OT">Somewhere else</option></select><label>Date</label><input type="date" id="lx" value="${today()}"><div class="err" id="le"></div><button class="btn" data-a="dolf">+ Publish report</button></div><input id="sq" placeholder="Search reports…" style="margin-top:12px">${lf.length?lf.map((x,i)=>`<div class="card rp" data-t="${esc((x.i+" "+x.p+" "+x.d).toLowerCase())}"><b>${x.k}: ${esc(x.i)}</b><br><span class="s">${x.p} · ${x.x}${x.d?" · "+esc(x.d):""}</span><br><button class="g" data-a="ret" data-v="${i}">Mark as returned</button></div>`).join(""):'<p class="s">No reports yet.</p>'}`,
+ai:()=>`<h1>Hey, I’m Nexus</h1><p class="s">Ask me about campus services.</p><div class="card">Hi! I’m Nexus, your campus helper. Ask me about bookings, QR passes, campus locations or Lost & Found.</div><div class="chips">${["How do I book a room?","How do QR passes work?","Where is the campus map?","How do I report a lost item?","What are the class periods?"].map(c=>`<button class="g" data-a="chip" data-v="${c}">${c}</button>`).join("")}</div>${chat.map(m=>`<div class="m ${m[0]}">${esc(m[1])}</div>`).join("")}<div class="row" style="margin-top:10px"><input id="q" placeholder="Ask Nexus anything…" style="flex:3"><button class="btn f0" style="margin:0;width:auto" data-a="ask">Ask</button></div>`};
+function render(){
+$("#bc").textContent=nt.length||"";$("#av").textContent=user?NAME[0]:"";
+$("#nav").style.display=user?"flex":"none";
+$("#nav").innerHTML=TABS.map(t=>`<button class="${t[0]==tab?"on":""}" data-a="go" data-v="${t[0]}">${t[1]}</button>`).join("");
+$("#v").innerHTML=user?V[tab]():V.login();
+if(tab=="ai"&&chat.length)scrollTo(0,document.body.scrollHeight);else scrollTo(0,0)}
+function ask(t){if(!t.trim())return;const h=KB.find(k=>k[0].test(t.toLowerCase()));chat.push(["u",t],["a",h?h[1]:"I can help with booking, class periods, QR passes, notifications, labs and Lost & Found. Try one of those."]);render()}
+function drop(b,own){bk=bk.filter(x=>x!=b);sv("sc_b",bk);const k=b.r+"|"+b.d+"|"+b.p;if(own)note("Booking cancelled: "+b.r+", "+lbl(b.p)+", "+b.d);wt=wt.filter(w=>{if(w==k){note("Slot available: "+b.r+", "+lbl(b.p)+", "+b.d);return false}return true});sv("sc_w",wt);render()}
+const A={
+login:async()=>{if(window.Notification&&Notification.permission=="default")Notification.requestPermission();const e=$("#em").value.trim().toLowerCase().replace("@","."),w=$("#pw").value;let ok=false;try{ok=e==EMAIL&&await sha(e+":"+w)==HASH}catch(x){}if(ok){user=NAME;sv("sc_u",user);tab="home";render()}else $("#le").textContent="Wrong email or password."},
+out:()=>{user=null;sv("sc_u",null);render()},
+go:v=>{tab=v;render()},
+blk:v=>{sel=v;render()},
+book:v=>{const[a,r]=v.split("|");slotQ={d:today(),a,r};tab="bk";render()},
+take:p=>{p=+p;const{d,r}=slotQ;if(d<today())return flash("That date is in the past.");if(find(r,d,p))return flash("Slot not available. Pick another period.");bk.push({id:"SC"+Date.now().toString(36).toUpperCase(),r,d,p,who:NAME});sv("sc_b",bk);note("Booking confirmed: "+r+", "+lbl(p)+", "+d);render()},
+cancel:id=>drop(bk.find(b=>b.id==id),true),
+ocancel:id=>drop(bk.find(b=>b.id==id),false),
+watch:p=>{const k=slotQ.r+"|"+slotQ.d+"|"+p;if(!wt.includes(k))wt.push(k);sv("sc_w",wt);flash("We’ll alert you if this slot becomes available.");render()},
+clr:()=>{nt=[];sv("sc_n",nt);render()},
+chip:v=>ask(v),ask:()=>ask($("#q").value),
+ret:v=>{lf.splice(v,1);sv("sc_l",lf);render()},
+qr:id=>{const el=$("#qr"+id),b=bk.find(x=>x.id==id);if(el.innerHTML){el.innerHTML="";return}const t=b.id+"|"+b.r+"|"+b.d+"|"+lbl(b.p);if(window.QRCode)new QRCode(el,{text:t,width:150,height:150});el.insertAdjacentHTML("beforeend",`<p class="s">${esc(t)}</p>`)},
+dolf:()=>{const i=$("#li").value.trim();if(!i)return $("#le").textContent="Enter the item name.";const v=$("#lb").value;lf.unshift({k:$("#lt").value,i,p:v=="OT"?"Somewhere else":B[v].n,d:$("#ld").value.trim(),x:$("#lx").value});sv("sc_l",lf);flash("Report published.");render()},
+verify:()=>{const p=$("#vc").value.trim().split("|"),o=$("#vo");o.style.display="block";if(p.length<4){o.textContent="Not a valid booking code.";return}const b=bk.find(x=>x.id==p[0]);o.innerHTML="<b>"+esc(p[1])+"</b><br>"+esc(p[2])+" · "+esc(p[3])+"<br>"+(b?(p[2]==today()?"Valid today":"Valid, but not for today"):"Booking not found on this device")}};
+document.addEventListener("click",e=>{const t=e.target.closest("[data-a]");if(t)A[t.dataset.a](t.dataset.v)});
+document.addEventListener("change",e=>{const i=e.target.id;if(i=="bd")slotQ.d=e.target.value;else if(i=="bb"){slotQ.a=e.target.value;slotQ.r=B[slotQ.a].r[0]}else if(i=="br")slotQ.r=e.target.value;else return;render()});
+document.addEventListener("input",e=>{if(e.target.id=="sq")document.querySelectorAll(".rp").forEach(c=>c.style.display=c.dataset.t.includes(e.target.value.toLowerCase())?"":"none")});
+document.addEventListener("keydown",e=>{if(e.key=="Enter"){if(e.target.id=="q")ask(e.target.value);if(e.target.id=="pw")A.login()}});
+render();
